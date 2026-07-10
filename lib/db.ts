@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Click, Database, Link, Session, User } from "./types";
 
-const dataDir = path.join(process.cwd(), "data");
+// On serverless platforms (Vercel, AWS Lambda, etc.) the deployed code
+// directory is read-only — only /tmp is writable, so we store the JSON
+// "database" there instead. Locally (and in any writable environment)
+// we keep using ./data so nothing changes for local dev.
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const dataDir = isServerless ? path.join("/tmp", "linkvault-data") : path.join(process.cwd(), "data");
 const dataFile = path.join(dataDir, "linkvault.json");
 
 const emptyDb = (): Database => ({
