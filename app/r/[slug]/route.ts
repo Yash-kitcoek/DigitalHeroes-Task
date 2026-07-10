@@ -6,7 +6,7 @@ import { notFound, redirect } from "next/navigation";
 export async function GET(_request: Request, context: { params: Promise<{ slug: string }> }) {
   const { slug } = await context.params;
   const requestHeaders = await headers();
-  const destination = updateDb((db) => {
+  const destination = await updateDb((db) => {
     const link = db.links.find((item) => item.slug === slug && item.status === "active");
     if (!link) {
       return null;

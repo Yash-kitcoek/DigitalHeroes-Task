@@ -8,7 +8,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   try {
     const user = await requireUser();
     const { id } = await context.params;
-    const db = readDb();
+    const db = await readDb();
     const link = db.links.find((item) => item.id === id && item.userId === user.id);
     if (!link) {
       return jsonError("Link not found.", 404);
@@ -26,7 +26,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     const user = await requireUser();
     const { id } = await context.params;
     const form = await request.formData();
-    const updated = updateDb((db) => {
+    const updated = await updateDb((db) => {
       const link = db.links.find((item) => item.id === id && item.userId === user.id);
       if (!link) {
         throw new Error("Link not found.");
@@ -54,7 +54,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   try {
     const user = await requireUser();
     const { id } = await context.params;
-    updateDb((db) => {
+    await updateDb((db) => {
       const link = db.links.find((item) => item.id === id && item.userId === user.id);
       if (!link) {
         throw new Error("Link not found.");

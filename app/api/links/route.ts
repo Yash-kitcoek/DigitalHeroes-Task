@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const status = url.searchParams.get("status") ?? "all";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
     const pageSize = 8;
-    const db = readDb();
+    const db = await readDb();
     const links = db.links
       .filter((link) => link.userId === user.id)
       .filter((link) => status === "all" || link.status === status)
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     const notes = optionalString(form.get("notes"), 500);
     const requestedSlug = validateSlug(form.get("slug")) || makeSlug(title);
 
-    const link = updateDb((db) => {
+    const link = await updateDb((db) => {
       const slug = uniquifySlug(requestedSlug, db.links);
       const now = new Date().toISOString();
       const created = {

@@ -1,14 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { supabase } from "./supabase";
 import type { Click, Database, Link, Session, User } from "./types";
-
-// On serverless platforms (Vercel, AWS Lambda, etc.) the deployed code
-// directory is read-only — only /tmp is writable, so we store the JSON
-// "database" there instead. Locally (and in any writable environment)
-// we keep using ./data so nothing changes for local dev.
-const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-const dataDir = isServerless ? path.join("/tmp", "linkvault-data") : path.join(process.cwd(), "data");
-const dataFile = path.join(dataDir, "linkvault.json");
 
 const emptyDb = (): Database => ({
   users: [],
@@ -17,29 +8,161 @@ const emptyDb = (): Database => ({
   sessions: []
 });
 
-export function readDb(): Database {
-  if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true });
+// --- row <-> app object mapping (DB uses snake_case, app uses camelCase) ---
+
+function userToRow(u: User) {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    password_hash: u.passwordHash,
+    role: u.role,
+    created_at: u.createdAt
+  };
+}
+function rowToUser(r: any): User {
+  return { id: r.id, name: r.name, email: r.email, passwordHash: r.password_hash, role: r.role, createdAt: r.created_at };
+}
+
+function linkToRow(l: Link) {
+  return {
+    id: l.id,
+    user_id: l.userId,
+    title: l.title,
+    destination_url: l.destinationUrl,
+    slug: l.slug,
+    campaign: l.campaign,
+    source: l.source,
+    medium: l.medium,
+    status: l.status,
+    notes: l.notes,
+    created_at: l.createdAt,
+    updated_at: l.updatedAt
+  };
+}
+function rowToLink(r: any): Link {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    title: r.title,
+    destinationUrl: r.destination_url,
+    slug: r.slug,
+    campaign: r.campaign,
+    source: r.source,
+    medium: r.medium,
+    status: r.status,
+    notes: r.notes,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  };
+}
+
+function clickToRow(c: Click) {
+  return {
+    id: c.id,
+    link_id: c.linkId,
+    user_agent: c.userAgent,
+    referrer: c.referrer,
+    ip_hash: c.ipHash,
+    country: c.country,
+    created_at: c.createdAt
+  };
+}
+function rowToClick(r: any): Click {
+  return {
+    id: r.id,
+    linkId: r.link_id,
+    userAgent: r.user_agent,
+    referrer: r.referrer,
+    ipHash: r.ip_hash,
+    country: r.country,
+    createdAt: r.created_at
+  };
+}
+
+function sessionToRow(s: Session) {
+  return { id: s.id, user_id: s.userId, expires_at: s.expiresAt, created_at: s.createdAt };
+}
+function rowToSession(r: any): Session {
+  return { id: r.id, userId: r.user_id, expiresAt: r.expires_at, createdAt: r.created_at };
+}
+
+// --- generic sync helpers ---
+
+async function deleteExtra(table: string, keepIds: string[]) {
+  if (keepIds.length === 0) {
+    const { error } = await supabase.from(table).delete().not("id", "is", null);
+    if (error) throw new Error(`Failed clearing ${table}: ${error.message}`);
+    return;
   }
-  if (!existsSync(dataFile)) {
+  const { error } = await supabase.from(table).delete().not("id", "in", `(${keepIds.join(",")})`);
+  if (error) throw new Error(`Failed pruning ${table}: ${error.message}`);
+}
+
+async function upsertRows(table: string, rows: unknown[]) {
+  if (rows.length === 0) return;
+  const { error } = await supabase.from(table).upsert(rows as any[]);
+  if (error) throw new Error(`Failed writing ${table}: ${error.message}`);
+}
+
+export async function readDb(): Promise<Database> {
+  const [{ data: users, error: usersErr }, { data: links, error: linksErr }, { data: clicks, error: clicksErr }, { data: sessions, error: sessionsErr }] =
+    await Promise.all([
+      supabase.from("users").select("*"),
+      supabase.from("links").select("*"),
+      supabase.from("clicks").select("*"),
+      supabase.from("sessions").select("*")
+    ]);
+
+  if (usersErr || linksErr || clicksErr || sessionsErr) {
+    const message = usersErr?.message || linksErr?.message || clicksErr?.message || sessionsErr?.message;
+    throw new Error(`Failed reading database: ${message}`);
+  }
+
+  if (!users || users.length === 0) {
     const seeded = seedDatabase();
-    writeDb(seeded);
+    await writeDb(seeded);
     return seeded;
   }
-  return JSON.parse(readFileSync(dataFile, "utf8")) as Database;
+
+  return {
+    users: users.map(rowToUser),
+    links: (links ?? []).map(rowToLink),
+    clicks: (clicks ?? []).map(rowToClick),
+    sessions: (sessions ?? []).map(rowToSession)
+  };
 }
 
-export function writeDb(db: Database) {
-  if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true });
-  }
-  writeFileSync(dataFile, `${JSON.stringify(db, null, 2)}\n`);
+export async function writeDb(db: Database): Promise<void> {
+  // Delete children before parents to satisfy foreign keys.
+  await deleteExtra(
+    "clicks",
+    db.clicks.map((c) => c.id)
+  );
+  await deleteExtra(
+    "sessions",
+    db.sessions.map((s) => s.id)
+  );
+  await deleteExtra(
+    "links",
+    db.links.map((l) => l.id)
+  );
+  await deleteExtra(
+    "users",
+    db.users.map((u) => u.id)
+  );
+
+  // Insert/update parents before children.
+  await upsertRows("users", db.users.map(userToRow));
+  await upsertRows("links", db.links.map(linkToRow));
+  await upsertRows("sessions", db.sessions.map(sessionToRow));
+  await upsertRows("clicks", db.clicks.map(clickToRow));
 }
 
-export function updateDb<T>(callback: (db: Database) => T) {
-  const db = readDb();
+export async function updateDb<T>(callback: (db: Database) => T): Promise<T> {
+  const db = await readDb();
   const result = callback(db);
-  writeDb(db);
+  await writeDb(db);
   return result;
 }
 

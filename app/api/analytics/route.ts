@@ -6,7 +6,7 @@ import { jsonError } from "@/lib/validation";
 export async function GET() {
   try {
     const user = await requireUser();
-    const db = readDb();
+    const db = await readDb();
     const links = db.links.filter((link) => link.userId === user.id);
     const ids = new Set(links.map((link) => link.id));
     const clicks = db.clicks.filter((click) => ids.has(click.linkId));

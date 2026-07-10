@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const email = validateEmail(form.get("email"));
     const password = validatePassword(form.get("password"));
 
-    const user = updateDb((db) => {
+    const user = await updateDb((db) => {
       if (db.users.some((item) => item.email === email)) {
         throw new Error("An account with that email already exists.");
       }

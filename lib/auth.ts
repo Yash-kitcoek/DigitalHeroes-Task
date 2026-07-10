@@ -26,7 +26,7 @@ export function hashIp(value: string) {
 }
 
 export async function createSession(userId: string) {
-  const session = updateDb((db) => {
+  const session = await updateDb((db) => {
     const expires = new Date();
     expires.setDate(expires.getDate() + 14);
     const created = {
@@ -53,7 +53,7 @@ export async function clearSession() {
   const store = await cookies();
   const id = store.get(cookieName)?.value;
   if (id) {
-    updateDb((db) => {
+    await updateDb((db) => {
       db.sessions = db.sessions.filter((session) => session.id !== id);
     });
   }
@@ -66,7 +66,7 @@ export async function currentUser() {
   if (!sessionId) {
     return null;
   }
-  const db = readDb();
+  const db = await readDb();
   const session = db.sessions.find((item) => item.id === sessionId);
   if (!session || new Date(session.expiresAt).getTime() <= Date.now()) {
     return null;

@@ -6,7 +6,7 @@ import { jsonError } from "@/lib/validation";
 export async function GET() {
   try {
     const user = await requireUser();
-    const db = readDb();
+    const db = await readDb();
     const rows = db.links.filter((link) => link.userId === user.id).map((link) => attachStats(link, db.clicks));
     return new Response(toCsv(rows), {
       headers: {

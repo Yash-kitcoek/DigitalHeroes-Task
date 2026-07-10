@@ -13,7 +13,7 @@ export const metadata = {
 export default async function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const db = readDb();
+  const db = await readDb();
   const link = db.links.find((item) => item.id === id && item.userId === user.id);
   if (!link) notFound();
   const detail = {
